@@ -1,10 +1,10 @@
-
 interface OptionsConfig {
-  handle?: string;
-  title?: string;
+  baseHandle?: string;
+  baseTitle?: string;
   vendor?: string;
   productCategory?: string;
-  tags?: string;
+  baseTags?: string;
+  basePrice?: string;
 }
 
 interface MenuUIItem {
@@ -19,167 +19,307 @@ interface JsonData {
   menuUI: MenuUIItem[];
 }
 
-export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): string {
-  // Default values for CSV fields not present in JSON
-  const defaultValues = {
-    handle: options.handle || "custom-product",
-    title: options.title || "Custom Product",
-    bodyHtml: "<p></p>",
-    vendor: options.vendor || "Delta's Integration",
-    productCategory: options.productCategory || "Furniture > Office Furniture > Workspace Tables",
-    type: "",
-    tags: options.tags || options.handle || "custom-product",
-    published: "TRUE",
-    variantSku: "0",
-    variantGrams: "0",
-    variantInventoryTracker: "shopify",
-    variantInventoryQty: "10",
-    variantInventoryPolicy: "deny",
-    variantFulfillmentService: "manual",
-    variantPrice: "3000",
-    variantCompareAtPrice: "",
-    variantRequiresShipping: "TRUE",
-    variantTaxable: "TRUE",
-    variantBarcode: "",
-    giftCard: "FALSE",
-    seoTitle: "",
-    seoDescription: "",
-    googleProductCategory: "",
-    googleGender: "",
-    googleAgeGroup: "",
-    googleMpn: "",
-    googleCondition: "",
-    googleCustomProduct: "",
-    googleCustomLabel0: "",
-    googleCustomLabel1: "",
-    googleCustomLabel2: "",
-    googleCustomLabel3: "",
-    googleCustomLabel4: "",
-    variantImage: "",
-    variantWeightUnit: "kg",
-    variantTaxCode: "",
-    costPerItem: "",
-    status: "active"
-  };
+interface ProductVariant {
+  optionName: string;
+  optionValue: string;
+  icon?: string;
+  id?: string;
+}
 
-  // Shopify CSV headers
+interface Product {
+  handle: string;
+  title: string;
+  label: string;
+  type: string;
+  variants: ProductVariant[];
+}
+
+export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): string {
+  // Shopify CSV headers - matching the template exactly
   const csvHeaders = [
     "Handle", "Title", "Body (HTML)", "Vendor", "Product Category", "Type", "Tags", "Published",
-    "Option1 Name", "Option1 Value", "Option1 Linked To", "Option2 Name", "Option2 Value", "Option2 Linked To",
-    "Option3 Name", "Option3 Value", "Option3 Linked To", "Variant SKU", "Variant Grams",
-    "Variant Inventory Tracker", "Variant Inventory Qty", "Variant Inventory Policy", "Variant Fulfillment Service",
-    "Variant Price", "Variant Compare At Price", "Variant Requires Shipping", "Variant Taxable", "Variant Barcode",
-    "Image Src", "Image Position", "Image Alt Text", "Gift Card", "SEO Title", "SEO Description",
-    "Google Shopping / Google Product Category", "Google Shopping / Gender", "Google Shopping / Age Group",
-    "Google Shopping / MPN", "Google Shopping / Condition", "Google Shopping / Custom Product",
-    "Google Shopping / Custom Label 0", "Google Shopping / Custom Label 1", "Google Shopping / Custom Label 2",
-    "Google Shopping / Custom Label 3", "Google Shopping / Custom Label 4", "Variant Image", "Variant Weight Unit",
-    "Variant Tax Code", "Cost per item", "Status"
+    "Option1 Name", "Option1 Value", "Option2 Name", "Option2 Value", "Option3 Name", "Option3 Value",
+    "Variant SKU", "Variant Grams", "Variant Inventory Tracker", "Variant Inventory Qty", 
+    "Variant Inventory Policy", "Variant Fulfillment Service", "Variant Price", "Variant Compare At Price",
+    "Variant Requires Shipping", "Variant Taxable", "Variant Barcode", "Image Src", "Image Position", 
+    "Image Alt Text", "Gift Card", "SEO Title", "SEO Description", "Google Shopping / Google Product Category",
+    "Google Shopping / Gender", "Google Shopping / Age Group", "Google Shopping / MPN", 
+    "Google Shopping / Condition", "Google Shopping / Custom Product", "Variant Image", 
+    "Variant Weight Unit", "Variant Tax Code", "Cost per item", "Included / United States", 
+    "Price / United States", "Compare At Price / United States", "Included / International", 
+    "Price / International", "Compare At Price / International", "Status"
   ];
 
-  // Function to escape CSV values
+  // Helper function to escape CSV values
   function escapeCsvValue(value: any): string {
     if (value === null || value === undefined) return "";
     const strValue = String(value);
-    if (strValue.includes(",") || strValue.includes("\"") || strValue.includes("\n")) {
+    if (strValue.includes(",") || strValue.includes("\"") || strValue.includes("\n") || strValue.includes("\r")) {
       return `"${strValue.replace(/"/g, '""')}"`;
     }
     return strValue;
   }
 
-  // Extract option groups from JSON
-  const optionGroups = json.menuUI.map(group => ({
-    name: group.label.toLowerCase().replace(/\s+/g, "_"), // Convert label to snake_case for OptionX Name
-    values: group.type === "material" ? group.options[0]?.baseMaps || [] : group.options,
-    isMaterial: group.type === "material"
-  }));
-
-  // Ensure up to 3 option groups for Shopify compatibility
-  const validOptionGroups = optionGroups.slice(0, 3);
-
-  // Get all possible variant combinations
-  const combinations: any[] = [];
-
-  function generateCombinations(groups: any[], index = 0, current: any[] = []) {
-    if (index === groups.length) {
-      combinations.push([...current]);
-      return;
+  // Helper function to create clean handle from label
+  function createHandle(label: string): string {
+    let handle = label.toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Replace multiple hyphens with single
+      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+    
+    if (options.baseHandle) {
+      handle = `${options.baseHandle}-${handle}`;
     }
-    const group = groups[index];
-    group.values.forEach((value: any) => {
-      current.push({ groupName: group.name, value: value.label, icon: value.icon || null });
-      generateCombinations(groups, index + 1, current);
-      current.pop();
-    });
+    
+    return handle || 'product'; // Fallback if handle is empty
   }
 
-  generateCombinations(validOptionGroups);
+  // Helper function to create option name
+  function createOptionName(label: string): string {
+    return label.toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase()); // Convert to Title Case
+  }
 
-  // Generate CSV rows
-  const rows: string[][] = [];
-  let imagePosition = 1;
-  const processedFinishes = new Set<string>();
+  // Parse JSON data into products
+  const products: Product[] = [];
 
-  combinations.forEach((combo, index) => {
-    const row = new Array(csvHeaders.length).fill("");
-    const isFirstForFinish = combo[0]?.groupName === "variant_change" && !processedFinishes.has(combo[0].value);
+  json.menuUI.forEach((menuItem) => {
+    const product: Product = {
+      handle: createHandle(menuItem.label),
+      title: options.baseTitle ? `${options.baseTitle} - ${menuItem.label}` : menuItem.label,
+      label: menuItem.label,
+      type: menuItem.type,
+      variants: []
+    };
 
-    // Product-level fields (only for first variant or first variant of a new finish)
-    if (index === 0 || isFirstForFinish) {
-      row[0] = defaultValues.handle; // Handle
-      row[1] = defaultValues.title; // Title
-      row[2] = defaultValues.bodyHtml; // Body (HTML)
-      row[3] = defaultValues.vendor; // Vendor
-      row[4] = defaultValues.productCategory; // Product Category
-      row[5] = defaultValues.type; // Type
-      row[6] = defaultValues.tags; // Tags
-      row[7] = defaultValues.published; // Published
-    } else {
-      row[0] = defaultValues.handle; // Handle (required for all rows)
-      row[7] = defaultValues.published; // Published
-    }
-
-    // Variant option fields
-    combo.forEach((option: any, i: number) => {
-      if (i < 3) { // Shopify supports up to 3 options
-        row[8 + i * 3] = validOptionGroups[i]?.name || ""; // OptionX Name
-        row[9 + i * 3] = option.value; // OptionX Value
-        row[10 + i * 3] = ""; // OptionX Linked To
+    // Extract variants based on type - CLEAR TYPE-BASED LOGIC
+    if (menuItem.type === "material" || menuItem.type === "material change") {
+      // For MATERIAL types: Extract option values from baseMaps[].label
+      if (menuItem.options && menuItem.options.length > 0) {
+        const baseMaps = menuItem.options[0]?.baseMaps || [];
+        baseMaps.forEach((baseMap: any) => {
+          product.variants.push({
+            optionName: createOptionName(menuItem.label),
+            optionValue: baseMap.label, // Taking label from baseMaps
+            icon: baseMap.icon,
+            id: baseMap.id
+          });
+        });
       }
-    });
-
-    // Variant details
-    row[17] = defaultValues.variantSku; // Variant SKU
-    row[18] = defaultValues.variantGrams; // Variant Grams
-    row[19] = defaultValues.variantInventoryTracker; // Variant Inventory Tracker
-    row[20] = defaultValues.variantInventoryQty; // Variant Inventory Qty
-    row[21] = defaultValues.variantInventoryPolicy; // Variant Inventory Policy
-    row[22] = defaultValues.variantFulfillmentService; // Variant Fulfillment Service
-    row[23] = defaultValues.variantPrice; // Variant Price
-    row[24] = defaultValues.variantCompareAtPrice; // Variant Compare At Price
-    row[25] = defaultValues.variantRequiresShipping; // Variant Requires Shipping
-    row[26] = defaultValues.variantTaxable; // Variant Taxable
-    row[27] = defaultValues.variantBarcode; // Variant Barcode
-    row[31] = defaultValues.giftCard; // Gift Card
-    row[45] = defaultValues.variantImage; // Variant Image
-    row[46] = defaultValues.variantWeightUnit; // Variant Weight Unit
-    row[47] = defaultValues.variantTaxCode; // Variant Tax Code
-    row[48] = defaultValues.costPerItem; // Cost per item
-    row[49] = defaultValues.status; // Status
-
-    // Image fields for material group (variant_change)
-    if (isFirstForFinish && combo[0]?.groupName === "variant_change") {
-      row[28] = combo[0].icon; // Image Src
-      row[29] = imagePosition++; // Image Position
-      row[30] = `${defaultValues.title} - ${combo[0].value}`; // Image Alt Text
-      processedFinishes.add(combo[0].value);
+    } else if (menuItem.type === "model") {
+      // For MODEL type: Extract option values directly from options[].label
+      if (menuItem.options && menuItem.options.length > 0) {
+        menuItem.options.forEach((option: any) => {
+          product.variants.push({
+            optionName: createOptionName(menuItem.label),
+            optionValue: option.label, // Taking label directly from options
+            icon: option.icon,
+            id: option.id
+          });
+        });
+      }
+    } else {
+      // For OTHER types: Also use options directly as fallback
+      if (menuItem.options && menuItem.options.length > 0) {
+        menuItem.options.forEach((option: any) => {
+          product.variants.push({
+            optionName: createOptionName(menuItem.label),
+            optionValue: option.label,
+            icon: option.icon,
+            id: option.id
+          });
+        });
+      }
     }
 
-    rows.push(row);
+    // If no variants found, create a default variant
+    if (product.variants.length === 0) {
+      product.variants.push({
+        optionName: "Title",
+        optionValue: "Default Title"
+      });
+    }
+
+    products.push(product);
   });
 
-  // Convert rows to CSV string
-  const csvRows = [csvHeaders.map(escapeCsvValue).join(",")];
-  rows.forEach(row => csvRows.push(row.map(escapeCsvValue).join(",")));
+  // Generate CSV rows
+  const csvRows: string[] = [];
+  
+  // Add header row
+  csvRows.push(csvHeaders.map(escapeCsvValue).join(","));
+
+  let globalImagePosition = 1;
+
+  // Generate rows for each product
+  products.forEach((product) => {
+    product.variants.forEach((variant, variantIndex) => {
+      const row = new Array(csvHeaders.length).fill("");
+      const isFirstVariant = variantIndex === 0;
+
+      // Product-level fields (only for first variant of each product)
+      if (isFirstVariant) {
+        row[0] = product.handle; // Handle
+        row[1] = product.title; // Title
+        row[2] = "<p></p>"; // Body (HTML)
+        row[3] = options.vendor || "Delta's Integration"; // Vendor
+        row[4] = options.productCategory || "Furniture > Office Furniture > Workspace Tables"; // Product Category
+        row[5] = product.type || ""; // Type
+        row[6] = options.baseTags ? `${options.baseTags}, ${product.label.toLowerCase()}` : product.label.toLowerCase(); // Tags
+        row[7] = "TRUE"; // Published
+      } else {
+        // For subsequent variants, only include handle
+        row[0] = product.handle; // Handle
+        row[7] = ""; // Published (empty for subsequent variants)
+      }
+
+      // Option fields - Fixed positioning
+      row[8] = variant.optionName; // Option1 Name
+      row[9] = variant.optionValue; // Option1 Value
+      row[10] = ""; // Option2 Name
+      row[11] = ""; // Option2 Value
+      row[12] = ""; // Option3 Name
+      row[13] = ""; // Option3 Value
+
+      // Variant-specific fields - Fixed positioning
+      row[14] = `${product.handle}-${variantIndex + 1}`; // Variant SKU
+      row[15] = "0"; // Variant Grams
+      row[16] = "shopify"; // Variant Inventory Tracker
+      row[17] = "10"; // Variant Inventory Qty
+      row[18] = "deny"; // Variant Inventory Policy
+      row[19] = "manual"; // Variant Fulfillment Service
+      row[20] = options.basePrice || "3000"; // Variant Price
+      row[21] = ""; // Variant Compare At Price
+      row[22] = "TRUE"; // Variant Requires Shipping
+      row[23] = "TRUE"; // Variant Taxable
+      row[24] = ""; // Variant Barcode
+
+      // Image fields - Fixed positioning
+      if (isFirstVariant && variant.icon) {
+        row[25] = "https://res.cloudinary.com/dicnuc6ox/image/upload/v1706617512/samples/chair.png" // Image Src
+        row[26] = globalImagePosition.toString(); // Image Position
+        row[27] = `${product.title} - ${variant.optionValue}`; // Image Alt Text
+        globalImagePosition++;
+      }
+
+      row[28] = "FALSE"; // Gift Card
+      row[29] = ""; // SEO Title
+      row[30] = ""; // SEO Description
+
+      // Google Shopping fields - Fixed positioning
+      row[31] = ""; // Google Shopping / Google Product Category
+      row[32] = ""; // Google Shopping / Gender
+      row[33] = ""; // Google Shopping / Age Group
+      row[34] = ""; // Google Shopping / MPN
+      row[35] = ""; // Google Shopping / Condition
+      row[36] = ""; // Google Shopping / Custom Product
+
+      row[37] =  ""; // Variant Image
+      row[38] = ""; // Variant Weight Unit
+      row[39] = ""; // Variant Tax Code
+      row[40] = ""; // Cost per item
+
+      // Market-specific pricing fields
+      row[41] = "TRUE"; // Included / United States
+      row[42] = ""; // Price / United States
+      row[43] = ""; // Compare At Price / United States
+      row[44] = "TRUE"; // Included / International
+      row[45] = ""; // Price / International
+      row[46] = ""; // Compare At Price / International
+
+      row[47] = "active"; // Status
+
+      csvRows.push(row.map(escapeCsvValue).join(","));
+    });
+  });
+
   return csvRows.join("\n");
 }
+
+// Example usage function
+export function convertJsonToCsv(jsonData: JsonData, config?: OptionsConfig): string {
+  const defaultConfig: OptionsConfig = {
+    baseHandle: "custom-product",
+    baseTitle: "Custom Product",
+    vendor: "Delta's Integration",
+    productCategory: "Furniture > Office Furniture > Workspace Tables",
+    baseTags: "custom, configurable",
+    basePrice: "3000"
+  };
+
+  const finalConfig = { ...defaultConfig, ...config };
+  return jsonToShopifyCsv(jsonData, finalConfig);
+}
+
+// Test with your sample data
+const sampleData: JsonData = {
+  "menuUI": [
+    {
+      "label": "variant change",
+      "type": "material",
+      "target": [
+        {
+          "model": "565-01",
+          "part": "part1"
+        },
+        {
+          "model": "LegA",
+          "part": "Leg_A"
+        }
+      ],
+      "options": [
+        {
+          "label": "test1",
+          "slug": "OSaSgSpE3X7Kvi53pk9c-test1",
+          "baseMaps": [
+            {
+              "id": "72x0ngHaynQRJo2jZzgp",
+              "label": "Amber",
+              "slug": "72x0ngHaynQRJo2jZzgp-Amber",
+              "icon": "https://example.com/amber.png",
+              "hexCode": "#ffffff"
+            },
+            {
+              "id": "iO82Ot8ZYXk5HPNed2Ej",
+              "label": "Bitmore",
+              "slug": "iO82Ot8ZYXk5HPNed2Ej-Bitmore",
+              "icon": "https://example.com/bitmore.png",
+              "hexCode": "#ffffff"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Handle Change",
+      "type": "model",
+      "options": [
+        {
+          "label": "handle 1",
+          "icon": null,
+          "target": "565-01 Hardware 1",
+          "id": "e37d5bd0-409f-4aa3-84a0-14311e7e879d"
+        },
+        {
+          "label": "handle 2",
+          "icon": null,
+          "target": "565-01 Hardware 2",
+          "id": "fe2042eb-837b-41ab-9eef-b8cf20c2a074"
+        }
+      ],
+      "visibilityConfig": {
+        "selectionType": 0,
+        "dependsOn": []
+      }
+    }
+  ]
+};
+
+// Usage example:
+// const csvOutput = convertJsonToCsv(sampleData);
+// console.log(csvOutput);
