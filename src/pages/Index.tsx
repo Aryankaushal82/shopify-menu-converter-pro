@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { JsonInput } from '@/components/JsonInput';
 import { OptionsPanel } from '@/components/OptionsPanel';
 import { ConversionResult } from '@/components/ConversionResult';
@@ -17,11 +17,28 @@ const Index = () => {
     title: "Custom Product",
     tags: "custom-product",
     vendor: "Delta's Integration",
-    productCategory: "Furniture > Office Furniture > Workspace Tables"
+    productCategory: "Furniture > Office Furniture > Workspace Tables",
+    primaryProduct: ""
   });
   const [csvOutput, setCsvOutput] = useState('');
   const [isValid, setIsValid] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+
+  // Extract available products from JSON input
+  const availableProducts = useMemo(() => {
+    if (!jsonInput.trim() || !isValid) return [];
+    
+    try {
+      const parsedJson = JSON.parse(jsonInput);
+      if (parsedJson.menuUI && Array.isArray(parsedJson.menuUI)) {
+        return parsedJson.menuUI.map((item: any) => item.label).filter(Boolean);
+      }
+    } catch (error) {
+      console.error('Error parsing JSON for product extraction:', error);
+    }
+    
+    return [];
+  }, [jsonInput, isValid]);
 
   const handleConvert = async () => {
     if (!jsonInput.trim()) {
@@ -38,7 +55,7 @@ const Index = () => {
       toast.success('JSON converted to CSV successfully!');
     } catch (error) {
       console.error('Conversion error:', error);
-      toast.error('Error converting JSON: ' + error.message);
+      toast.error('Error converting JSON: ' + (error as Error).message);
       setCsvOutput('');
     } finally {
       setIsConverting(false);
@@ -60,6 +77,14 @@ const Index = () => {
     setJsonInput('');
     setCsvOutput('');
     setIsValid(false);
+    setOptions({
+      handle: "custom-product",
+      title: "Custom Product",
+      tags: "custom-product",
+      vendor: "Delta's Integration",
+      productCategory: "Furniture > Office Furniture > Workspace Tables",
+      primaryProduct: ""
+    });
     toast.info('Form reset successfully');
   };
 
@@ -95,6 +120,7 @@ const Index = () => {
               <OptionsPanel
                 options={options}
                 onChange={setOptions}
+                availableProducts={availableProducts}
               />
             </Card>
 

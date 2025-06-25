@@ -5,6 +5,7 @@ interface OptionsConfig {
   productCategory?: string;
   baseTags?: string;
   basePrice?: string;
+  primaryProduct?: string;
 }
 
 interface MenuUIItem {
@@ -85,13 +86,24 @@ export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): s
       .replace(/\b\w/g, l => l.toUpperCase()); // Convert to Title Case
   }
 
+  // Helper function to get the effective product title
+  function getProductTitle(menuItem: any): string {
+    if (options.primaryProduct && menuItem.label === options.primaryProduct) {
+      // If this is the primary product, use the base title or primary product name
+      return options.baseTitle || options.primaryProduct;
+    } else {
+      // For non-primary products, use base title with their label as suffix
+      return options.baseTitle ? `${options.baseTitle} - ${menuItem.label}` : menuItem.label;
+    }
+  }
+
   // Parse JSON data into products
   const products: Product[] = [];
 
   json.menuUI.forEach((menuItem) => {
     const product: Product = {
       handle: createHandle(menuItem.label),
-      title: options.baseTitle ? `${options.baseTitle} - ${menuItem.label}` : menuItem.label,
+      title: getProductTitle(menuItem),
       label: menuItem.label,
       type: menuItem.type,
       variants: []
@@ -165,12 +177,17 @@ export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): s
       // Product-level fields (only for first variant of each product)
       if (isFirstVariant) {
         row[0] = product.handle; // Handle
-        row[1] = product.title; // Title
+        row[1] = product.title; // Title (now uses primary product logic)
         row[2] = "<p></p>"; // Body (HTML)
         row[3] = options.vendor || "Delta's Integration"; // Vendor
         row[4] = options.productCategory || "Furniture > Office Furniture > Workspace Tables"; // Product Category
         row[5] = product.type || ""; // Type
-        row[6] = options.baseTags ? `${options.baseTags}, ${product.label.toLowerCase()}` : product.label.toLowerCase(); // Tags
+        
+        // Apply common tags to all products
+        const commonTags = options.baseTags || "";
+        const productTags = commonTags ? `${commonTags}, ${product.label.toLowerCase()}` : product.label.toLowerCase();
+        row[6] = productTags; // Tags
+        
         row[7] = "TRUE"; // Published
       } else {
         // For subsequent variants, only include handle
@@ -249,7 +266,8 @@ export function convertJsonToCsv(jsonData: JsonData, config?: OptionsConfig): st
     vendor: "Delta's Integration",
     productCategory: "Furniture > Office Furniture > Workspace Tables",
     baseTags: "custom, configurable",
-    basePrice: "3000"
+    basePrice: "3000",
+    primaryProduct: "primary-product"
   };
 
   const finalConfig = { ...defaultConfig, ...config };
