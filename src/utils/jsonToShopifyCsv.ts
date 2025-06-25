@@ -270,13 +270,13 @@ export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): s
 // Example usage function
 export function convertJsonToCsv(jsonData: JsonData, config?: OptionsConfig): string {
   const defaultConfig: OptionsConfig = {
-    baseHandle: "custom-product",
-    baseTitle: "Custom Product",
+    handle: "custom-product",
+    title: "Custom Product",
     vendor: "Delta's Integration",
     productCategory: "Furniture > Office Furniture > Workspace Tables",
-    baseTags: "custom, configurable",
+    tags: "custom, configurable",
     basePrice: "3000",
-    primaryProduct: "primary-product"
+    primaryProduct: ""
   };
 
   const finalConfig = { ...defaultConfig, ...config };
