@@ -1,9 +1,10 @@
+
 interface OptionsConfig {
-  baseHandle?: string;
-  baseTitle?: string;
+  handle?: string;
+  title?: string;
   vendor?: string;
   productCategory?: string;
-  baseTags?: string;
+  tags?: string;
   basePrice?: string;
   primaryProduct?: string;
 }
@@ -70,8 +71,8 @@ export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): s
       .replace(/-+/g, '-') // Replace multiple hyphens with single
       .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
     
-    if (options.baseHandle) {
-      handle = `${options.baseHandle}-${handle}`;
+    if (options.handle) {
+      handle = `${options.handle}-${handle}`;
     }
     
     return handle || 'product'; // Fallback if handle is empty
@@ -88,12 +89,20 @@ export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): s
 
   // Helper function to get the effective product title
   function getProductTitle(menuItem: any): string {
+    console.log('Getting product title for:', menuItem.label);
+    console.log('Primary product setting:', options.primaryProduct);
+    console.log('Base title setting:', options.title);
+    
     if (options.primaryProduct && menuItem.label === options.primaryProduct) {
-      // If this is the primary product, use the base title or primary product name
-      return options.baseTitle || options.primaryProduct;
+      // If this is the primary product, use the base title
+      const primaryTitle = options.title || options.primaryProduct;
+      console.log('Using primary product title:', primaryTitle);
+      return primaryTitle;
     } else {
       // For non-primary products, use base title with their label as suffix
-      return options.baseTitle ? `${options.baseTitle} - ${menuItem.label}` : menuItem.label;
+      const nonPrimaryTitle = options.title ? `${options.title} - ${menuItem.label}` : menuItem.label;
+      console.log('Using non-primary product title:', nonPrimaryTitle);
+      return nonPrimaryTitle;
     }
   }
 
@@ -184,7 +193,7 @@ export function jsonToShopifyCsv(json: JsonData, options: OptionsConfig = {}): s
         row[5] = product.type || ""; // Type
         
         // Apply common tags to all products
-        const commonTags = options.baseTags || "";
+        const commonTags = options.tags || "";
         const productTags = commonTags ? `${commonTags}, ${product.label.toLowerCase()}` : product.label.toLowerCase();
         row[6] = productTags; // Tags
         
