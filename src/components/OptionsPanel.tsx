@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -11,7 +10,7 @@ interface OptionsConfig {
   tags: string;
   vendor: string;
   productCategory: string;
-  primaryProduct?: string;
+  primaryProduct: string;
 }
 
 interface OptionsPanelProps {
